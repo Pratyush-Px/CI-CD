@@ -7,6 +7,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 //This is a pipeline test comment
+//This is test comment 2
 const SUPPORTED_COURSES = [
     "Computer Science",
     "Information Technology",

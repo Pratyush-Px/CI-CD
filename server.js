@@ -150,7 +150,7 @@ function validateStudentInput(data, currentStudentId = null) {
 // Health check endpoint
 app.get("/health", (req, res) => {
     res.status(200).json({
-        status: "DOWN",
+        status: "UP",
         uptime: process.uptime(),
         timestamp: new Date().toISOString()
     });

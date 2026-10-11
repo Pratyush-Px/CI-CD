@@ -1,0 +1,103 @@
+name: StudentHub CI/CD Pipeline & Auto-Merge
+
+on:
+  push:
+    branches:
+      - '**' # Triggers on all branches (main, dev, feature/*, etc.)
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  test:
+    name: 1. Run Automated Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Test Suite (node --test & Supertest)
+        run: npm test
+
+  auto-merge-to-main:
+    name: 2. Auto-Merge into Main (if tests pass)
+    needs: test
+    runs-on: ubuntu-latest
+    # Only run auto-merge if:
+    # 1. Tests passed successfully
+    # 2. Push was on a branch other than main (e.g. dev, feature-xyz)
+    # 3. Trigger was a push (not a PR or already on main)
+    if: github.event_name == 'push' && github.ref_name != 'main'
+    steps:
+      - name: Checkout Repository with Full History
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git Identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch and Merge into Main
+        run: |
+          echo "Switching to main branch..."
+          git checkout main
+          echo "Merging branch '${{ github.ref_name }}' into main..."
+          git merge --no-ff "origin/${{ github.ref_name }}" -m "ci: auto-merge branch '${{ github.ref_name }}' into main after passing tests [skip ci]"
+          echo "Pushing merged changes to main..."
+          git push origin main
+
+  docker-build:
+    name: 3. Docker Build & Container Packaging
+    needs: test
+    runs-on: ubuntu-latest
+    # Run Docker build on main branch or pull requests
+    if: github.ref_name == 'main' || github.event_name == 'pull_request'
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Verify Dockerfile & Build Container Image
+        run: |
+          docker build -t student-management-app:latest .
+          docker images
+
+      - name: Check Docker Hub Credentials for Optional Push
+        id: check_credentials
+        run: |
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            echo "publish_enabled=true" >> $GITHUB_OUTPUT
+            echo "Docker Hub credentials detected. Publishing enabled."
+          else
+            echo "publish_enabled=false" >> $GITHUB_OUTPUT
+            echo "Docker Hub credentials not configured. Skipping remote push."
+          fi
+
+      - name: Log in to Docker Hub (Conditional)
+        if: github.ref_name == 'main' && steps.check_credentials.outputs.publish_enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Publish Image to Docker Hub (Conditional)
+        if: github.ref_name == 'main' && steps.check_credentials.outputs.publish_enabled == 'true'
+        run: |
+          docker tag student-management-app:latest ${{ secrets.DOCKERHUB_USERNAME }}/student-management-app:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/student-management-app:latest

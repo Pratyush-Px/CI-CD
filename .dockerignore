@@ -1,0 +1,15 @@
+# Ignored directories and files for Docker build context
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.git
+.gitignore
+.github
+.dockerignore
+Dockerfile
+.env
+.env.*
+server.test.js
+README.md
+*.md

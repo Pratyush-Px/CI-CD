@@ -65,16 +65,20 @@ jobs:
 
   docker-build:
     name: 3. Docker Build & Container Packaging
-    needs: test
+    needs: [test, auto-merge-to-main]
     runs-on: ubuntu-latest
-    # Run Docker build on main branch or pull requests
-    if: github.ref_name == 'main' || github.event_name == 'pull_request'
+    # Run Docker build if tests passed AND merge succeeded (or was skipped because already on main)
+    if: always() && needs.test.result == 'success' && (needs.auto-merge-to-main.result == 'success' || needs.auto-merge-to-main.result == 'skipped')
     steps:
-      - name: Checkout Source Code
+      - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Verify Dockerfile & Build Container Image
         run: |
+          echo "Building production Docker image from main branch..."
           docker build -t student-management-app:latest .
           docker images
 
@@ -90,14 +94,15 @@ jobs:
           fi
 
       - name: Log in to Docker Hub (Conditional)
-        if: github.ref_name == 'main' && steps.check_credentials.outputs.publish_enabled == 'true'
+        if: steps.check_credentials.outputs.publish_enabled == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Publish Image to Docker Hub (Conditional)
-        if: github.ref_name == 'main' && steps.check_credentials.outputs.publish_enabled == 'true'
+        if: steps.check_credentials.outputs.publish_enabled == 'true'
         run: |
           docker tag student-management-app:latest ${{ secrets.DOCKERHUB_USERNAME }}/student-management-app:latest
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/student-management-app:latest
+
